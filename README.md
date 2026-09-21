@@ -1,6 +1,11 @@
-# AI Reply (v3.0.1)
+# AI Reply (v3.2.0)
 
-Floating AI reply app for Android. A small draggable bubble sits over any app — tap it, pick a tone, get **one** AI-generated reply you can copy or paste anywhere. Pure native Kotlin (no React Native, no WebView).
+Floating AI reply app for Android — now with a **full ChatGPT-style chat inside**.
+
+- **Floating bubble** over any chat app: tap, pick a tone, get ONE AI-generated reply to copy/paste.
+- **Whole-chat reading** (optional accessibility): reads the messages you received AND the ones you sent, even scrolling up to fold older history into the reply context.
+- **AI Reply Chat** — a real chatbox like ChatGPT/Claude/Gemini: streaming replies, conversation history, markdown + code blocks, model selector (free GLM series only), and settings where you plug your API (not in the chat screen).
+- **Updates without downloading anything**: the chat interface is a web app. Improvements deployed to the cloud chat arrive in the app instantly; even the built-in offline chat hot-updates itself from this repo (`appui/version.json`). Only deep system-level changes ever need a new APK.
 
 Based on the [replyfy](https://github.com/aryankumarx/replyfy) project by **aryankumarx** (MIT license), rebuilt from scratch as a fully native Android app.
 
@@ -12,17 +17,26 @@ Grab the signed APK directly from the Releases page:
 
 Or the fixed link for the current version:
 
-`https://github.com/firefox-star/AI-Reply/releases/latest/download/AI-Reply-v3.0.1-release.apk`
+`https://github.com/firefox-star/AI-Reply/releases/latest/download/AI-Reply-v3.2.0-release.apk`
+
+## How the no-download updates work
+
+- The app's main screen is a thin WebView shell.
+- Chat UI + logic live in the cloud chat app (and in `appui/index.html` as an offline fallback).
+- At every launch the shell checks `appui/version.json` on GitHub; a newer version is downloaded, swapped in and reloaded — **no APK download, no reinstall**.
+- The API key stays on the phone (native storage), shared between the chat and the floating bubble.
 
 ## Features
 
+- ChatGPT-style chat: streaming, conversations sidebar, stop/regenerate, copy, markdown + code blocks
+- Model selector — free GLM series only: GLM-4.5-Flash (default), GLM-4-Flash, GLM-4-Flash-250414, GLM-4V-Flash
+- Cloud mode (no API key needed) or plug your own free Z.ai / BigModel key in Settings
 - Draggable floating bubble + reply panel over any app (overlay)
 - 4 tones: Friendly, Professional, Playful, Fluent — one tap = one reply (not all four)
-- 6 free AI presets, **Z.ai GLM-4.5-Flash is the default**:
-  Z.ai / OpenRouter / Google Gemini / Mistral / Groq / Cerebras
-- Your API key stays on your device (SharedPreferences). Nothing is hardcoded.
+- Whole-chat reading with scroll-up history (accessibility, optional)
+- Battery-optimization whitelist shortcut — built to stand against aggressive killers (Infinix/Transsion etc.)
+- Hot-updatable UI — see above
 - Quick Settings tile to open the reply panel
-- Optional accessibility text capture — the app works fine without it. On Android 13+ the system locks restricted accessibility apps; the app ships with a built-in 3-step unlock guide (App info → ⋮ → Allow restricted settings).
 
 ## Build with Termux (on your phone)
 

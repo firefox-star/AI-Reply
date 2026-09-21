@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0d0f14">
+<title>AI Reply (Offline)</title>
+<style>
+:root{--bg:#0d0f14;--bg2:#11141b;--surface:#1a1e28;--surface2:#232937;--border:#272e3d;--border2:#333b4e;--text:#e9ecf3;--muted:#95a0b6;--accent:#6d5cff;--accent2:#4f8cff;--danger:#ff6b6b}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,'Segoe UI',Roboto,sans-serif;font-size:15px;line-height:1.55;overflow:hidden;display:flex;flex-direction:column}
+header{height:54px;min-height:54px;display:flex;align-items:center;gap:6px;padding:0 10px;border-bottom:1px solid var(--border)}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:15px}
+.orb{width:26px;height:26px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff}
+.icobtn{width:38px;height:38px;border-radius:10px;border:none;background:none;color:var(--text);display:flex;align-items:center;justify-content:center;cursor:pointer}
+.icobtn:active{background:var(--surface)}
+.icobtn svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.spacer{flex:1}
+#mode{font-size:10.5px;color:var(--muted);border:1px solid var(--border2);padding:3px 9px;border-radius:20px;white-space:nowrap}
+#msgs{flex:1;overflow-y:auto;padding:16px 0 8px}
+.thread{max-width:780px;margin:0 auto;padding:0 14px}
+.row{display:flex;gap:10px;margin-bottom:18px;animation:fin .25s ease}
+@keyframes fin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.row.user{justify-content:flex-end}
+.row.user .bub{background:var(--surface2);border:1px solid var(--border2);padding:10px 14px;border-radius:18px 18px 5px 18px;white-space:pre-wrap;word-wrap:break-word;max-width:86%}
+.av{width:30px;height:30px;border-radius:9px;flex:0 0 auto;margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;background:linear-gradient(135deg,var(--accent),var(--accent2))}
+.mtext{min-width:0;word-wrap:break-word;overflow-wrap:break-word}
+.mtext p{margin:0 0 9px}.mtext p:last-child{margin:0}
+.mtext code{background:rgba(159,171,196,.16);padding:1.5px 6px;border-radius:6px;font-family:Menlo,Consolas,monospace;font-size:.86em}
+.mtext pre{background:#0b0d12;border:1px solid var(--border2);border-radius:12px;padding:12px;overflow-x:auto;margin:8px 0}
+.mtext pre code{background:none;padding:0;font-size:12.5px;color:#dce3f2}
+.mtext ul,.mtext ol{margin:4px 0 9px;padding-left:20px}
+.mtext li{margin:3px 0}
+.mtext a{color:#7da4ff}
+.cursor{display:inline-block;width:8px;height:15px;background:var(--accent2);border-radius:2px;vertical-align:-2px;animation:bl 1s steps(1) infinite;margin-left:2px}
+@keyframes bl{50%{opacity:0}}
+.err{color:var(--danger);background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.25);padding:9px 12px;border-radius:12px;font-size:13px;white-space:pre-wrap}
+.stopped{color:var(--muted);font-size:11.5px;margin-top:5px;font-style:italic}
+#empty{text-align:center;padding-top:12vh;max-width:520px;margin:0 auto;padding-left:20px;padding-right:20px}
+#empty .big{width:56px;height:56px;border-radius:18px;margin:0 auto 14px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;box-shadow:0 10px 30px rgba(109,92,255,.35)}
+#empty .big svg{width:28px;height:28px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#empty h1{font-size:20px;margin:0 0 6px}
+#empty p{color:var(--muted);font-size:13px;margin:0 0 18px}
+#composer{padding:8px 14px calc(12px + env(safe-area-inset-bottom))}
+.cwrap{max-width:780px;margin:0 auto;display:flex;align-items:flex-end;gap:9px;background:var(--surface);border:1px solid var(--border2);border-radius:26px;padding:8px 8px 8px 16px}
+#input{flex:1;background:none;border:none;outline:none;resize:none;color:var(--text);font-family:inherit;font-size:15px;line-height:1.5;max-height:130px;padding:7px 0}
+#input::placeholder{color:var(--muted)}
+#send{width:40px;height:40px;border-radius:50%;border:none;cursor:pointer;flex:0 0 auto;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;display:flex;align-items:center;justify-content:center}
+#send:disabled{opacity:.35}
+#send svg{width:18px;height:18px;fill:currentColor}
+#sheetwrap{position:fixed;inset:0;z-index:50;display:none}
+#sheetwrap.show{display:block}
+#sheetbg{position:absolute;inset:0;background:rgba(0,0,0,.55)}
+#sheet{position:absolute;left:0;right:0;bottom:0;max-width:520px;margin:0 auto;background:var(--bg2);border:1px solid var(--border2);border-bottom:none;border-radius:22px 22px 0 0;max-height:88dvh;overflow-y:auto;padding:8px 18px calc(22px + env(safe-area-inset-bottom));animation:up .25s ease}
+@keyframes up{from{transform:translateY(50px);opacity:.5}to{transform:none;opacity:1}}
+.grab{width:42px;height:4px;border-radius:4px;background:var(--border2);margin:4px auto 12px}
+.sh-h{font-size:17px;font-weight:700;margin:4px 0 2px}
+.sh-sub{font-size:12px;color:var(--muted);margin-bottom:14px}
+.lb{display:block;margin:0 0 7px;font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+.inp{width:100%;background:var(--surface);border:1px solid var(--border2);border-radius:12px;color:var(--text);font-family:inherit;font-size:13.5px;padding:11px 13px;outline:none;margin-bottom:14px}
+.inp:focus{border-color:var(--accent)}
+select.inp{appearance:none;height:46px}
+textarea.inp{resize:vertical;min-height:60px}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.sbtn{flex:1;min-width:130px;background:var(--surface);border:1px solid var(--border2);border-radius:12px;color:var(--text);font-family:inherit;font-size:12.5px;font-weight:600;padding:11px 8px;cursor:pointer;text-align:center}
+.sbtn:active{background:var(--surface2)}
+.sbtn small{display:block;font-weight:400;font-size:10.5px;color:var(--muted);margin-top:2px}
+.savebtn{width:100%;border:none;border-radius:14px;padding:13px;color:#fff;font-family:inherit;font-size:14.5px;font-weight:700;cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent2))}
+.verline{text-align:center;color:var(--muted);font-size:11px;margin-top:13px;line-height:1.7}
+#toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%) translateY(10px);background:#2c3342;color:#fff;font-size:13px;padding:10px 18px;border-radius:12px;opacity:0;pointer-events:none;transition:.25s;z-index:99;max-width:86vw;text-align:center;border:1px solid var(--border2)}
+#toast.show{opacity:1;transform:translateX(-50%)}
+#nobridge{display:none;padding:14px;border-radius:14px;background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.3);font-size:12.5px;margin:14px auto;max-width:520px}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><div class="orb">A</div><span id="title">AI Reply</span></div>
+  <span id="mode">offline UI</span>
+  <div class="spacer"></div>
+  <button class="icobtn" id="clearbtn" title="Clear chat"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14"/></svg></button>
+  <button class="icobtn" id="setbtn" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34 1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87 1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg></button>
+</header>
+<div id="nobridge">This is the app's built-in offline page. It only works inside the AI Reply Android app — in the app it reconnects automatically. Online it is replaced by the cloud chat.</div>
+<div id="msgs"><div class="thread" id="thread"></div></div>
+<div id="composer">
+  <div class="cwrap">
+    <textarea id="input" rows="1" placeholder="Message AI Reply…" enterkeyhint="send"></textarea>
+    <button id="send" aria-label="Send"><svg viewBox="0 0 24 24"><path d="M3.4 20.4 20.9 12 3.4 3.6l.01 6.53L15 12 3.41 13.87z"/></svg></button>
+  </div>
+</div>
+
+<div id="sheetwrap">
+  <div id="sheetbg"></div>
+  <div id="sheet">
+    <div class="grab"></div>
+    <div class="sh-h">Settings</div>
+    <div class="sh-sub">Stored only on this phone. Shared with the floating bubble.</div>
+    <label class="lb">Model (free GLM series)</label>
+    <select class="inp" id="s_model">
+      <option value="glm-4.5-flash">GLM-4.5-Flash — Free · Default</option>
+      <option value="glm-4-flash">GLM-4-Flash — Free</option>
+      <option value="glm-4-flash-250414">GLM-4-Flash 250414 — Free · New</option>
+      <option value="glm-4v-flash">GLM-4V-Flash — Free · Vision</option>
+    </select>
+    <label class="lb">API base URL</label>
+    <input class="inp" id="s_base" spellcheck="false" placeholder="https://api.z.ai/api/paas/v4">
+    <label class="lb">API key (optional for cloud URL)</label>
+    <input class="inp" id="s_key" type="password" spellcheck="false" placeholder="sk-…">
+    <label class="lb">Custom instructions</label>
+    <textarea class="inp" id="s_sys" placeholder="How should the AI behave?"></textarea>
+    <div class="btnrow">
+      <button class="sbtn" id="b_batt">Battery<small>allow background</small></button>
+      <button class="sbtn" id="b_acc">Accessibility<small>auto-read status</small></button>
+      <button class="sbtn" id="b_bub">Bubble<small>show floating bubble</small></button>
+    </div>
+    <div class="btnrow">
+      <button class="sbtn" id="b_upd">Check app update<small>hot-update this UI</small></button>
+      <button class="sbtn" id="b_cloud">Open cloud chat<small>back to the live app</small></button>
+    </div>
+    <button class="savebtn" id="s_save">Save settings</button>
+    <div class="verline" id="verline">AI Reply</div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+var HAS = typeof window.Android !== "undefined" && window.Android && typeof window.Android.chat === "function";
+var MODELS = { "glm-4.5-flash":"GLM-4.5-Flash", "glm-4-flash":"GLM-4-Flash", "glm-4-flash-250414":"GLM-4-Flash 250414", "glm-4v-flash":"GLM-4V-Flash" };
+var DEFAULT_SYS = "You are GLM, the assistant inside the AI Reply app. Be helpful, warm and direct. Use markdown when it improves clarity.";
+var LS = "of_conv_v1", LS_S = "of_settings_v1";
+var msgsEl = document.getElementById("thread"), input = document.getElementById("input"), sendBtn = document.getElementById("send");
+var streaming = false, currentId = null, history = [], settings = { model:"glm-4.5-flash", sys:DEFAULT_SYS };
+
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+function md(src){
+  var t = esc(src);
+  t = t.replace(/```(\w*)\n?([\s\S]*?)```/g, function(m,l,c){return "<pre><code>"+c.replace(/\n$/,"")+"</code></pre>";});
+  t = t.replace(/`([^`\n]+)`/g,"<code>$1</code>");
+  t = t.replace(/\*\*([^*\n]+)\*\*/g,"<strong>$1</strong>");
+  t = t.replace(/(^|[^*\w])\*([^*\n]+)\*/g,"$1<em>$2</em>");
+  t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+  var out=[],inUl=false,inOl=false,para=[];
+  function flush(){if(para.length){out.push("<p>"+para.join("<br/>")+"</p>");para=[];}}
+  t.split("\n").forEach(function(line){
+    var h=/^(#{1,3})\s+(.*)$/.exec(line),ul=/^\s*[-*]\s+(.*)$/.exec(line),ol=/^\s*\d+[.)]\s+(.*)$/.exec(line);
+    if(/^\s*$/.test(line)){flush();if(inUl){out.push("</ul>");inUl=false;}if(inOl){out.push("</ol>");inOl=false;}return;}
+    if(h){flush();out.push("<h"+h[1].length+">"+h[2]+"</h"+h[1].length+">");return;}
+    if(ul){flush();if(inOl){out.push("</ol>");inOl=false;}if(!inUl){out.push("<ul>");inUl=true;}out.push("<li>"+ul[1]+"</li>");return;}
+    if(ol){flush();if(inUl){out.push("</ul>");inUl=false;}if(!inOl){out.push("<ol>");inOl=true;}out.push("<li>"+ol[1]+"</li>");return;}
+    para.push(line);
+  });
+  flush();if(inUl)out.push("</ul>");if(inOl)out.push("</ol>");
+  return out.join("");
+}
+function toast(m){var t=document.getElementById("toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(function(){t.classList.remove("show");},2400);}
+function nearBottom(){var m=document.getElementById("msgs");return m.scrollHeight-m.scrollTop-m.clientHeight<140;}
+function scrollDown(){var m=document.getElementById("msgs");m.scrollTop=m.scrollHeight;}
+function save(){try{localStorage.setItem(LS,JSON.stringify(history.slice(-60)));}catch(e){}}
+
+function render(){
+  if(!history.length){
+    msgsEl.innerHTML='<div id="empty"><div class="big"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-8 8H4l2-3a8 8 0 1 1 15-5z"/></svg></div><h1>Offline mode</h1><p>The cloud chat could not load, so this built-in version is running. It reads your saved API settings — everything still works.</p></div>';
+    return;
+  }
+  var h="";
+  history.forEach(function(m,i){
+    var last=i===history.length-1;
+    if(m.role==="user"){h+='<div class="row user"><div class="bub">'+esc(m.content)+"</div></div>";return;}
+    h+='<div class="row"><div class="av">AI</div><div style="min-width:0;flex:1">';
+    if(m.err){h+='<div class="err">'+esc(m.err)+"</div>";}
+    else{h+='<div class="mtext">'+md(m.content)+"</div>";}
+    if(m.stop){h+='<div class="stopped">Stopped</div>';}
+    h+="</div></div>";
+  });
+  msgsEl.innerHTML=h;
+  scrollDown();
+}
+
+function addMsg(role,content){history.push({role:role,content:content});save();render();}
+
+function send(text){
+  if(!HAS){toast("Open this inside the AI Reply app");return;}
+  if(streaming)return;
+  var t=(text!==undefined?text:input.value).trim();
+  if(!t)return;
+  input.value="";input.style.height="auto";
+  addMsg("user",t);
+  history.push({role:"assistant",content:""});save();render();
+  var payload={model:settings.model,messages:[]};
+  if(settings.sys.trim())payload.messages.push({role:"system",content:settings.sys.trim()});
+  history.forEach(function(m){if(!m.err&&m.content)payload.messages.push({role:m.role,content:m.content});});
+  streaming=true;sendBtn.disabled=true;currentId="s"+Date.now();
+  try{window.Android.chat(currentId,JSON.stringify(payload));}
+  catch(e){streaming=false;sendBtn.disabled=false;toast("Bridge error: "+e.message);}
+}
+
+window.__aiChunk=function(id,payload){
+  if(id!==currentId)return;
+  var d=payload&&payload.d||"";
+  for(var i=history.length-1;i>=0;i--){
+    if(history[i].role==="assistant"){history[i].content+=d;break;}
+  }
+  save();render();
+};
+window.__aiDone=function(id,aborted){
+  if(id!==currentId)return;
+  streaming=false;sendBtn.disabled=false;currentId=null;
+  if(aborted){for(var i=history.length-1;i>=0;i--){if(history[i].role==="assistant"){history[i].stop=true;break;}}save();render();}
+};
+window.__aiError=function(id,payload){
+  if(id!==currentId)return;
+  streaming=false;sendBtn.disabled=false;currentId=null;
+  for(var i=history.length-1;i>=0;i--){
+    if(history[i].role==="assistant"){
+      if(!history[i].content)history[i].err=(payload&&payload.m)||"Something went wrong.";
+      break;
+    }
+  }
+  save();render();
+};
+
+input.addEventListener("input",function(){input.style.height="auto";input.style.height=Math.min(input.scrollHeight,130)+"px";});
+input.addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}});
+sendBtn.addEventListener("click",function(){send();});
+document.getElementById("clearbtn").addEventListener("click",function(){if(history.length&&confirm("Clear this conversation?")){history=[];save();render();}});
+document.getElementById("setbtn").addEventListener("click",openSheet);
+document.getElementById("sheetbg").addEventListener("click",closeSheet);
+
+function openSheet(){
+  document.getElementById("s_model").value=settings.model;
+  if(HAS){document.getElementById("s_base").value=window.Android.getBaseUrl();document.getElementById("s_key").value=window.Android.getApiKey();}
+  document.getElementById("s_sys").value=settings.sys;
+  var v=HAS?window.Android.appVersion():"browser";
+  var acc=HAS&&window.Android.isAccessibilityEnabled()?"ON":"off";
+  document.getElementById("verline").innerHTML="AI Reply v"+v+" · accessibility "+acc+" · offline build 1";
+  document.getElementById("sheetwrap").classList.add("show");
+}
+function closeSheet(){document.getElementById("sheetwrap").classList.remove("show");}
+
+document.getElementById("s_save").addEventListener("click",function(){
+  settings.model=document.getElementById("s_model").value;
+  settings.sys=document.getElementById("s_sys").value||DEFAULT_SYS;
+  try{localStorage.setItem(LS_S,JSON.stringify(settings));}catch(e){}
+  if(HAS){
+    var b=document.getElementById("s_base").value.trim(),k=document.getElementById("s_key").value.trim();
+    if(b)window.Android.setBaseUrl(b);
+    window.Android.setApiKey(k);
+  }
+  closeSheet();toast("Saved on this phone");
+  refreshMode();
+});
+document.getElementById("b_batt").addEventListener("click",function(){HAS&&window.Android.openBatterySettings();});
+document.getElementById("b_acc").addEventListener("click",function(){HAS&&window.Android.openAccessibilitySettings();});
+document.getElementById("b_bub").addEventListener("click",function(){HAS?(window.Android.hasOverlayPermission()?window.Android.startBubble():window.Android.openOverlaySettings()):toast("App only");});
+document.getElementById("b_upd").addEventListener("click",function(){HAS?window.Android.checkUpdate():toast("App only");});
+document.getElementById("b_cloud").addEventListener("click",function(){HAS?window.Android.loadCloudApp():toast("App only");});
+
+function refreshMode(){
+  var el=document.getElementById("mode");
+  el.textContent=HAS?"offline UI · "+(MODELS[settings.model]||settings.model):"browser — no bridge";
+}
+window.__appResume=function(){if(HAS){/* refresh accessibility status next open */}};
+
+(function init(){
+  try{var s=JSON.parse(localStorage.getItem(LS_S)||"null");if(s)settings={model:s.model||settings.model,sys:s.sys||settings.sys};}catch(e){}
+  try{history=JSON.parse(localStorage.getItem(LS)||"[]")||[];}catch(e){history=[];}
+  if(!HAS){document.getElementById("nobridge").style.display="block";}
+  render();refreshMode();
+  if(HAS){var v=window.Android.appVersion();document.getElementById("title").textContent="AI Reply v"+v.split(" ")[0];}
+})();
+})();
+</script>
+</body>
+</html>

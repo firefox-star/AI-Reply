@@ -1,99 +1,105 @@
 package com.aikeyboardmobile
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.content.Intent
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.provider.Settings
 import android.view.View
-import android.widget.EditText
-import android.widget.TextView
-import android.widget.Toast
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.google.android.material.button.MaterialButton
-import com.google.android.material.button.MaterialButtonToggleGroup
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.textfield.TextInputEditText
 
+/**
+ * The app shell. The whole chat experience is a web app:
+ *
+ *  1. CLOUD UI (default) — the published AI Reply Chat site. Every improvement
+ *     I deploy there reaches this app instantly, no APK download.
+ *  2. OFFLINE UI — a bundled copy in filesDir (OTA-updated from the repo via
+ *     AppUi). Shown automatically when the cloud site can't be reached, and it
+ *     talks to the AI through the native bridge (ChatBridge).
+ */
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var presets: List<Preset>
-    private lateinit var presetButtons: List<MaterialButton>
-    private var selectedPreset = 0
-    private var generating = false
-
-    private lateinit var etUrl: TextInputEditText
-    private lateinit var etKey: TextInputEditText
-    private lateinit var etModel: TextInputEditText
-    private lateinit var tvPresetHint: TextView
-    private lateinit var tvSaveStatus: TextView
-    private lateinit var etTestMessage: EditText
-    private lateinit var tgTones: MaterialButtonToggleGroup
-    private lateinit var btnGenerate: MaterialButton
-    private lateinit var tvTestStatus: TextView
-    private lateinit var boxResult: View
-    private lateinit var tvResult: TextView
-    private lateinit var btnCopy: MaterialButton
-    private lateinit var tvOverlayStatus: TextView
-    private lateinit var tvAccStatus: TextView
-
-    private val mainHandler = Handler(Looper.getMainLooper())
+    private lateinit var webView: WebView
+    private var usingLocal = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
 
-        presets = Presets.all
-        etUrl = findViewById(R.id.etUrl)
-        etKey = findViewById(R.id.etKey)
-        etModel = findViewById(R.id.etModel)
-        tvPresetHint = findViewById(R.id.tvPresetHint)
-        tvSaveStatus = findViewById(R.id.tvSaveStatus)
-        etTestMessage = findViewById(R.id.etTestMessage)
-        tgTones = findViewById(R.id.tgTones)
-        btnGenerate = findViewById(R.id.btnGenerate)
-        tvTestStatus = findViewById(R.id.tvTestStatus)
-        boxResult = findViewById(R.id.boxResult)
-        tvResult = findViewById(R.id.tvResult)
-        btnCopy = findViewById(R.id.btnCopy)
-        tvOverlayStatus = findViewById(R.id.tvOverlayStatus)
-        tvAccStatus = findViewById(R.id.tvAccStatus)
+        webView = WebView(this).apply {
+            setBackgroundColor(Color.parseColor("#0d0f14"))
+            with(settings) {
+                javaScriptEnabled = true
+                domStorageEnabled = true
+                allowFileAccess = true
+                loadWithOverviewMode = true
+                useWideViewPort = true
+            }
+            isVerticalScrollBarEnabled = false
+            webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(
+                    view: WebView,
+                    request: WebResourceRequest
+                ): Boolean {
+                    val url = request.url.toString()
+                    // Keep our own origins inside; open everything else outside.
+                    return if (url.startsWith(REMOTE_UI_URL) || url.startsWith("file:")) {
+                        false
+                    } else if (url.startsWith("http")) {
+                        runCatching { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(url))) }
+                        true
+                    } else {
+                        true
+                    }
+                }
 
-        presetButtons = listOf(
-            findViewById(R.id.btnPz0), findViewById(R.id.btnPz1), findViewById(R.id.btnPz2),
-            findViewById(R.id.btnPz3), findViewById(R.id.btnPz4), findViewById(R.id.btnPz5)
-        )
-        presetButtons.forEachIndexed { i, b -> b.setOnClickListener { selectPreset(i) } }
+                override fun onReceivedError(
+                    view: WebView,
+                    request: WebResourceRequest,
+                    error: WebResourceError
+                ) {
+                    if (request.isForMainFrame && !usingLocal) loadLocal()
+                }
 
-        // Restore whatever the user saved last time (default = Z.ai GLM)
-        val cfg = Prefs.load(this)
-        val savedIdx = presets.indexOfFirst { it.url == cfg.baseUrl }
-        if (savedIdx >= 0) {
-            selectPreset(savedIdx)
-            etKey.setText(cfg.apiKey)
-        } else {
-            selectPreset(0)
-            etUrl.setText(cfg.baseUrl)
-            etModel.setText(cfg.model)
-            etKey.setText(cfg.apiKey)
+                override fun onReceivedHttpError(
+                    view: WebView,
+                    request: WebResourceRequest,
+                    errorResponse: android.webkit.WebResourceResponse
+                ) {
+                    if (request.isForMainFrame && !usingLocal) loadLocal()
+                }
+            }
         }
 
-        findViewById<MaterialButton>(R.id.btnSave).setOnClickListener { saveConfig() }
-        btnGenerate.setOnClickListener { onGenerate() }
-        btnCopy.setOnClickListener { copy(tvResult.text?.toString().orEmpty()) }
+        webView.addJavascriptInterface(
+            ChatBridge(this) { script -> webView.evaluateJavascript(script, null) },
+            "Android"
+        )
 
-        findViewById<MaterialButton>(R.id.btnOverlay).setOnClickListener { openOverlaySettings() }
-        findViewById<MaterialButton>(R.id.btnShowBubble).setOnClickListener { showBubble() }
-        findViewById<MaterialButton>(R.id.btnAcc).setOnClickListener { openAccessibility() }
-        findViewById<MaterialButton>(R.id.btnRestricted).setOnClickListener { showRestrictedGuide() }
+        setContentView(webView)
 
-        tgTones.check(R.id.btnToneFriendly)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (webView.canGoBack()) webView.goBack() else moveTaskToBack(true)
+            }
+        })
+
+        if (!AppUi.ensureInstalled(this)) {
+            android.widget.Toast.makeText(this, "Setup problem — reinstall the app", android.widget.Toast.LENGTH_LONG).show()
+        }
+
+        if (savedInstanceState != null) {
+            webView.restoreState(savedInstanceState)
+        } else {
+            loadRemote()
+        }
+
+        // Silent hot-update check for the offline UI (applies + reloads when newer).
+        AppUi.checkForUpdate(this, manual = false)
 
         if (Build.VERSION.SDK_INT >= 33) {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
@@ -102,191 +108,36 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        refreshStatuses()
+        // If the overlay permission was granted while we were away, tell the page.
+        evaluateJs("window.__appResume && window.__appResume()")
     }
 
-    private fun selectPreset(i: Int) {
-        selectedPreset = i
-        val p = presets[i]
-        etUrl.setText(p.url)
-        etModel.setText(p.model)
-        tvPresetHint.text = p.hint
-        tvPresetHint.setOnClickListener {
-            runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(p.keyUrl))) }
-        }
-        presetButtons.forEachIndexed { j, b ->
-            if (j == i) {
-                b.setBackgroundColor(ContextCompat.getColor(this, R.color.brand))
-                b.setTextColor(ContextCompat.getColor(this, R.color.white))
-                b.strokeWidth = 0
-            } else {
-                b.setBackgroundColor(ContextCompat.getColor(this, R.color.white))
-                b.setTextColor(ContextCompat.getColor(this, R.color.textMain))
-                b.strokeWidth = 2
-            }
-        }
+    fun loadRemote() {
+        usingLocal = false
+        webView.loadUrl(REMOTE_UI_URL)
     }
 
-    private fun readConfig(): Prefs.Config =
-        Prefs.Config(
-            baseUrl = etUrl.text?.toString()?.trim().orEmpty(),
-            apiKey = etKey.text?.toString()?.trim().orEmpty(),
-            model = etModel.text?.toString()?.trim().orEmpty()
-        )
-
-    private fun saveConfig() {
-        val c = readConfig()
-        if (!c.baseUrl.startsWith("http")) {
-            tvSaveStatus.setTextColor(ContextCompat.getColor(this, R.color.errorRed))
-            tvSaveStatus.text = "Base URL must start with http"
-            return
-        }
-        if (c.model.isBlank()) {
-            tvSaveStatus.setTextColor(ContextCompat.getColor(this, R.color.errorRed))
-            tvSaveStatus.text = "Model name can't be empty"
-            return
-        }
-        Prefs.save(this, c)
-        tvSaveStatus.setTextColor(ContextCompat.getColor(this, R.color.accentGreen))
-        tvSaveStatus.text = "Saved ✓ — test it below"
-        Toast.makeText(this, "AI settings saved on this phone", Toast.LENGTH_SHORT).show()
+    fun loadLocal() {
+        usingLocal = true
+        val f = AppUi.installedFile(this)
+        webView.loadUrl("file://${f.absolutePath}")
     }
 
-    /** ONE tapped tone → exactly ONE reply. */
-    private fun onGenerate() {
-        if (generating) return
-        val tone = when (tgTones.checkedButtonId) {
-            R.id.btnToneFriendly -> Tone.FRIENDLY
-            R.id.btnToneProfessional -> Tone.PROFESSIONAL
-            R.id.btnToneShort -> Tone.SHORT
-            R.id.btnTonePlayful -> Tone.PLAYFUL
-            else -> Tone.FRIENDLY
-        }
-        val cfg = readConfig()
-        val msg = etTestMessage.text?.toString()?.trim().orEmpty()
-
-        if (msg.isEmpty()) {
-            setStatus(tvTestStatus, "Type a message you received first.", R.color.errorRed)
-            return
-        }
-        if (cfg.baseUrl.isBlank() || cfg.model.isBlank()) {
-            setStatus(tvTestStatus, "Pick a preset in step 1 first.", R.color.errorRed)
-            return
-        }
-        Prefs.save(this, cfg)
-
-        generating = true
-        btnGenerate.isEnabled = false
-        btnGenerate.text = "Thinking…"
-        tvTestStatus.text = ""
-        boxResult.visibility = View.GONE
-
-        Thread {
-            AiClient.generate(cfg, tone, msg) { r ->
-                mainHandler.post {
-                    generating = false
-                    btnGenerate.isEnabled = true
-                    btnGenerate.text = "Generate reply"
-                    when (r) {
-                        is AiClient.Ok -> {
-                            tvResult.text = r.text
-                            boxResult.visibility = View.VISIBLE
-                            setStatus(tvTestStatus, "Done ✓ — tap Copy, then paste it in your chat.", R.color.accentGreen)
-                        }
-                        is AiClient.Err -> setStatus(tvTestStatus, r.msg, R.color.errorRed)
-                    }
-                }
-            }
-        }.start()
+    fun reloadWebView() {
+        runOnUiThread { webView.reload() }
     }
 
-    private fun setStatus(tv: TextView, text: String, colorRes: Int) {
-        tv.setTextColor(ContextCompat.getColor(this, colorRes))
-        tv.text = text
+    fun evaluateJs(script: String) {
+        runOnUiThread { webView.evaluateJavascript(script, null) }
     }
 
-    private fun copy(text: String) {
-        if (text.isBlank()) return
-        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        cm.setPrimaryClip(ClipData.newPlainText("AI Reply", text))
-        Toast.makeText(this, "Copied ✓ — now paste it in your chat", Toast.LENGTH_SHORT).show()
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        webView.saveState(outState)
     }
 
-    private fun refreshStatuses() {
-        val overlayOk = Settings.canDrawOverlays(this)
-        tvOverlayStatus.text = if (overlayOk) "●  Bubble permission granted ✓"
-        else "●  Not granted yet — the bubble can't appear without it"
-        tvOverlayStatus.setTextColor(
-            ContextCompat.getColor(this, if (overlayOk) R.color.accentGreen else R.color.amberWarn)
-        )
-
-        val accEnabled = isAccessibilityEnabled()
-        tvAccStatus.text = if (accEnabled) "●  Auto-read is ON ✓"
-        else "●  Off — you can still use the bubble by pasting the message"
-        tvAccStatus.setTextColor(
-            ContextCompat.getColor(this, if (accEnabled) R.color.accentGreen else R.color.textSub)
-        )
-    }
-
-    private fun isAccessibilityEnabled(): Boolean {
-        val expected = "$packageName/${ChatAccessibilityService::class.java.name}"
-        val enabled = Settings.Secure.getString(
-            contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ) ?: return false
-        return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
-    }
-
-    private fun openOverlaySettings() {
-        val i = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
-        runCatching { startActivity(i) }
-            .onFailure {
-                runCatching { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }
-            }
-        Toast.makeText(this, "Find AI Reply in the list and switch it ON", Toast.LENGTH_LONG).show()
-    }
-
-    private fun showBubble() {
-        if (!Settings.canDrawOverlays(this)) {
-            openOverlaySettings()
-            return
-        }
-        val i = Intent(this, BubbleService::class.java).setAction(BubbleService.ACTION_SHOW_PANEL)
-        ContextCompat.startForegroundService(this, i)
-        Toast.makeText(this, "Bubble added — drag it anywhere, tap to open", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun openAccessibility() {
-        runCatching { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-            .onFailure {
-                runCatching { startActivity(Intent(Settings.ACTION_SETTINGS)) }
-            }
-    }
-
-    /**
-     * The step-by-step unlock guide for Android 13+'s "Restricted setting —
-     * For your security, this setting is unavailable" message.
-     */
-    private fun showRestrictedGuide() {
-        MaterialAlertDialogBuilder(this)
-            .setTitle("Unlock “Restricted setting”")
-            .setMessage(
-                "Android 13+ blocks accessibility switches for apps installed from a browser or file manager. " +
-                "It's a one-time unlock:\n\n" +
-                "1. Tap “Open App info” below.\n" +
-                "2. Tap the ⋮ (three dots) in the top-right corner.\n" +
-                "3. Tap “Allow restricted settings”.\n" +
-                "4. Come back here and tap “Enable in Accessibility settings”, then switch ON AI Reply.\n\n" +
-                "Don't see the three dots? Uninstall the old AI app, then install this new APK from your Files app — " +
-                "or connect to a PC once and run: adb install AI-Reply-v3.0.0.apk\n\n" +
-                "Remember: this is OPTIONAL. The bubble works right now without it — just paste the message in."
-            )
-            .setPositiveButton("Open App info") { _, _ ->
-                runCatching {
-                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
-                }
-            }
-            .setNeutralButton("Accessibility settings") { _, _ -> openAccessibility() }
-            .setNegativeButton("Got it", null)
-            .show()
+    companion object {
+        /** The published cloud chat (updated automatically when I deploy improvements). */
+        const val REMOTE_UI_URL = "https://preview-27ef61e4-a38f-4789-a20a-2561ff7a2b30.space-z.ai/"
     }
 }

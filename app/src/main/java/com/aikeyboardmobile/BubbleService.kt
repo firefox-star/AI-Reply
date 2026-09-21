@@ -126,6 +126,7 @@ class BubbleService : Service() {
         }
 
         runCatching { wm.addView(v, p) }
+            .onFailure { return }
         bubbleView = v
     }
 
@@ -136,7 +137,16 @@ class BubbleService : Service() {
     @SuppressLint("InflateParams")
     private fun openPanel() {
         if (panelView != null) return
-        val v = View.inflate(this, R.layout.panel_bubble, null)
+        // Ask the accessibility service (if on) for a fresh full-chat read,
+        // including scrolled-up history. Runs in background — results land
+        // in ChatAccessibilityService.lastTranscript before the AI call.
+        ChatAccessibilityService.requestCapture(withHistory = true)
+        val v = try {
+            View.inflate(this, R.layout.panel_bubble, null)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Panel failed to open: ${e.message}", Toast.LENGTH_SHORT).show()
+            return
+        }
         val density = resources.displayMetrics.density
         val maxW = resources.displayMetrics.widthPixels
         val w = minOf((maxW * 0.94f).toInt(), (420 * density).toInt())
@@ -160,9 +170,14 @@ class BubbleService : Service() {
         val colorErr = resources.getColor(R.color.errorRed, theme)
 
         // Pre-fill from the optional accessibility service (best effort)
+        val transcript = ChatAccessibilityService.chatContext()
         if (ChatAccessibilityService.lastText.isNotBlank()) {
             etMsg.setText(ChatAccessibilityService.lastText)
-            status.text = "Message auto-filled — pick ONE tone."
+            if (transcript.isNotBlank()) {
+                status.text = "Whole chat read ✓ (${ChatAccessibilityService.transcriptMessages} msgs) — pick ONE tone."
+            } else {
+                status.text = "Message auto-filled — pick ONE tone."
+            }
         }
 
         val toneButtons: List<Pair<MaterialButton, Tone>> = listOf(
@@ -195,7 +210,8 @@ class BubbleService : Service() {
                 boxResult.visibility = View.GONE
                 setBusy(true)
                 Thread {
-                    AiClient.generate(cfg, tone, msg) { r ->
+                    val transcriptNow = ChatAccessibilityService.chatContext()
+                    AiClient.generate(cfg, tone, msg, cb = { r ->
                         mainHandler.post {
                             setBusy(false)
                             when (r) {
@@ -211,7 +227,7 @@ class BubbleService : Service() {
                                 }
                             }
                         }
-                    }
+                    }, transcript = transcriptNow)
                 }.start()
             }
         }
@@ -224,6 +240,10 @@ class BubbleService : Service() {
         v.findViewById<View>(R.id.btnPanelClose).setOnClickListener { closePanel() }
 
         runCatching { wm.addView(v, p) }
+            .onFailure {
+                Toast.makeText(this, "Could not show panel: ${it.message}", Toast.LENGTH_SHORT).show()
+                return
+            }
         panelView = v
         panelOpen = true
     }
@@ -261,10 +281,15 @@ class BubbleService : Service() {
 
     private fun startForegroundNow() {
         val n = buildNotification()
-        if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(1, n)
+        try {
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else {
+                startForeground(1, n)
+            }
+        } catch (e: Exception) {
+            // Android 12+ can refuse background foreground-starts; never crash for this.
+            stopSelf()
         }
     }
 

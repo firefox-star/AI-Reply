@@ -27,7 +27,13 @@ object AiClient {
     data class Ok(val text: String) : Result()
     data class Err(val msg: String) : Result()
 
-    fun generate(cfg: Prefs.Config, tone: Tone, message: String, cb: (Result) -> Unit) {
+    fun generate(
+        cfg: Prefs.Config,
+        tone: Tone,
+        message: String,
+        cb: (Result) -> Unit,
+        transcript: String = ""
+    ) {
         try {
             val url = cfg.baseUrl.trim().trimEnd('/') + "/chat/completions"
 
@@ -36,7 +42,16 @@ object AiClient {
                     "Output ONLY the reply text itself: no quotes, no labels, no explanation, no options. " +
                     "Keep it natural and under 60 words." + tone.extra
 
-            val user = "Tone: ${tone.title}\n\nMessage I received: $message\n\nWrite my reply in the tone above."
+            val user = if (transcript.isNotBlank()) {
+                "Tone: ${tone.title}\n\n" +
+                        "Here is the recent chat so far (\"Them:\" = the other person, \"Me:\" = the user):\n" +
+                        "-----\n$transcript\n-----\n\n" +
+                        "The user wants to reply to the latest part of this conversation. " +
+                        "Message being replied to: $message\n\n" +
+                        "Write the user's reply in the tone above, consistent with the conversation."
+            } else {
+                "Tone: ${tone.title}\n\nMessage I received: $message\n\nWrite my reply in the tone above."
+            }
 
             val root = JSONObject()
             root.put("model", cfg.model.trim())
@@ -88,6 +103,121 @@ object AiClient {
         } catch (e: Exception) {
             cb(Err("Network problem: ${e.message ?: e.javaClass.simpleName}. Check your internet and the Base URL."))
         }
+    }
+
+    /**
+     * Streaming chat completion for the chat UI (SSE, OpenAI-compatible).
+     * Emits deltas as they arrive; falls back to one big delta when the
+     * server ignores "stream": true. Returns a session handle that can cancel.
+     */
+    class StreamSession(val id: String) {
+        @Volatile
+        var cancelled = false
+        internal var conn: HttpURLConnection? = null
+    }
+
+    fun stream(
+        id: String,
+        baseUrl: String,
+        apiKey: String,
+        bodyJson: String,
+        onDelta: (String) -> Unit,
+        onDone: (aborted: Boolean) -> Unit,
+        onError: (String) -> Unit
+    ): StreamSession {
+        val session = StreamSession(id)
+        Thread {
+            var abortedClean = false
+            try {
+                val root = JSONObject(bodyJson)
+                root.put("stream", true)
+                if (!root.has("model") || root.optString("model").isBlank()) {
+                    root.put("model", "glm-4.5-flash")
+                }
+                val url = baseUrl.trim().trimEnd('/') + "/chat/completions"
+
+                val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 20000
+                    readTimeout = 120000
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("Accept", "text/event-stream")
+                    if (apiKey.isNotBlank()) {
+                        setRequestProperty("Authorization", "Bearer ${apiKey.trim()}")
+                    }
+                }
+                session.conn = conn
+                conn.outputStream.use { it.write(root.toString().toByteArray(Charsets.UTF_8)) }
+                val code = conn.responseCode
+
+                if (code !in 200..299) {
+                    val body = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
+                    onError(humanError(code, body))
+                    return@Thread
+                }
+
+                val contentType = conn.contentType ?: ""
+                val isSse = contentType.contains("event-stream", ignoreCase = true)
+                if (!isSse) {
+                    // Server ignored stream:true — respond like the one-shot path.
+                    val body = conn.inputStream.bufferedReader().use { it.readText() }
+                    if (session.cancelled) {
+                        onDone(true)
+                        return@Thread
+                    }
+                    val json = JSONObject(body)
+                    val msg = json.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")
+                    var text = msg?.optString("content").orEmpty()
+                    if (text.isBlank()) text = msg?.optString("reasoning_content").orEmpty()
+                    if (text.isBlank()) {
+                        onError("The AI returned an empty reply. Check the model name (e.g. glm-4.5-flash).")
+                    } else {
+                        onDelta(text)
+                        onDone(false)
+                    }
+                    return@Thread
+                }
+
+                val reader = conn.inputStream.bufferedReader()
+                val full = StringBuilder()
+                while (true) {
+                    if (session.cancelled) {
+                        abortedClean = true
+                        break
+                    }
+                    val line = reader.readLine() ?: break
+                    if (!line.startsWith("data:")) continue
+                    val payload = line.substring(5).trim()
+                    if (payload == "[DONE]") break
+                    val delta = try {
+                        val j = JSONObject(payload)
+                        j.optJSONArray("choices")?.optJSONObject(0)
+                            ?.optJSONObject("delta")?.optString("content").orEmpty()
+                    } catch (_: Exception) {
+                        ""
+                    }
+                    if (delta.isNotEmpty()) {
+                        full.append(delta)
+                        onDelta(delta)
+                    }
+                }
+                when {
+                    abortedClean -> onDone(true)
+                    full.isEmpty() -> onError("The AI returned an empty reply. The free tier may be busy — try again shortly.")
+                    else -> onDone(false)
+                }
+            } catch (e: Exception) {
+                if (session.cancelled) {
+                    onDone(true)
+                } else {
+                    onError("Network problem: ${e.message ?: e.javaClass.simpleName}. Check your internet and the Base URL.")
+                }
+            } finally {
+                try { session.conn?.disconnect() } catch (_: Exception) {}
+            }
+        }.start()
+        return session
     }
 
     /** Tolerant cleanup: strips code fences, leading labels and wrapping quotes. */

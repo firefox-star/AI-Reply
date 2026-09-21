@@ -34,6 +34,17 @@ object AppUi {
     fun installedVersion(ctx: Context): Int =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt("version", 0)
 
+    /**
+     * Cloud chat URL delivered over OTA (version.json "cloudUrl"). When the
+     * hosted chat moves, we ship a new version.json — every installed phone
+     * follows WITHOUT an APK update. Falls back to the baked constant.
+     */
+    fun cloudUrl(ctx: Context): String? {
+        val u = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString("cloudUrl", null)?.trim()
+        return if (!u.isNullOrEmpty() && u.startsWith("http")) u else null
+    }
+
     /** Make sure a local UI exists (first run: copy the bundled one). */
     fun ensureInstalled(ctx: Context): Boolean {
         val f = installedFile(ctx)
@@ -64,14 +75,26 @@ object AppUi {
     fun checkForUpdate(ctx: Context, manual: Boolean, onResult: ((String) -> Unit)? = null) {
         Thread {
             var result = "latest"
+            var cloudChanged = false
             try {
                 val conn = URL("$VERSION_URL?t=${System.currentTimeMillis()}").openConnection() as HttpURLConnection
                 conn.connectTimeout = 10000
                 conn.readTimeout = 10000
                 val vText = conn.inputStream.bufferedReader().use { it.readText() }
                 try { conn.disconnect() } catch (_: Exception) {}
-                val remoteVersion = JSONObject(vText).optInt("version", 0)
+                val meta = JSONObject(vText)
+                val remoteVersion = meta.optInt("version", 0)
                 val current = installedVersion(ctx)
+
+                // Cloud URL can move independently of the UI version.
+                val cloud = meta.optString("cloudUrl", "").trim()
+                if (cloud.startsWith("http")) {
+                    val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                    if (sp.getString("cloudUrl", null) != cloud) {
+                        sp.edit().putString("cloudUrl", cloud).apply()
+                        cloudChanged = true
+                    }
+                }
 
                 if (remoteVersion > current) {
                     val dir = File(ctx.filesDir, "appui")
@@ -117,6 +140,7 @@ object AppUi {
                     result == "latest" && manual ->
                         Toast.makeText(ctx, "You are on the latest chat build", Toast.LENGTH_SHORT).show()
                 }
+                if (cloudChanged) (ctx as? MainActivity)?.switchToCloudIfLocal()
                 onResult?.invoke(result)
             }
         }.start()

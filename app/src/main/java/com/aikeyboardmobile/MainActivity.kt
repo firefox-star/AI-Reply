@@ -47,7 +47,7 @@ class MainActivity : AppCompatActivity() {
                 ): Boolean {
                     val url = request.url.toString()
                     // Keep our own origins inside; open everything else outside.
-                    return if (url.startsWith(REMOTE_UI_URL) || url.startsWith("file:")) {
+                    return if (url.startsWith(remoteUrl()) || url.startsWith("file:")) {
                         false
                     } else if (url.startsWith("http")) {
                         runCatching { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(url))) }
@@ -114,7 +114,15 @@ class MainActivity : AppCompatActivity() {
 
     fun loadRemote() {
         usingLocal = false
-        webView.loadUrl(REMOTE_UI_URL)
+        webView.loadUrl(remoteUrl())
+    }
+
+    /** Cloud target: OTA-delivered URL wins over the baked constant. */
+    fun remoteUrl(): String = AppUi.cloudUrl(this) ?: REMOTE_UI_URL
+
+    /** Called by AppUi when an OTA check delivers a new cloud URL. */
+    fun switchToCloudIfLocal() {
+        if (usingLocal) loadRemote()
     }
 
     fun loadLocal() {
@@ -137,7 +145,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        /** The published cloud chat (updated automatically when I deploy improvements). */
-        const val REMOTE_UI_URL = "https://preview-27ef61e4-a38f-4789-a20a-2561ff7a2b30.space-z.ai/"
+        /** Last-resort cloud chat URL; the live one is OTA-delivered via version.json. */
+        const val REMOTE_UI_URL = "https://c-6ab18a19-14810412-55d02c4d977c.space-z.ai/"
     }
 }

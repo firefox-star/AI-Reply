@@ -1,7 +1,8 @@
 {
-  "version": 1,
+  "version": 2,
   "updated": "2026-09-22",
   "file": "index.html",
   "minApp": 11,
-  "notes": "AI Reply offline chat UI v1"
+  "cloudUrl": "https://c-6ab18a19-14810412-55d02c4d977c.space-z.ai/",
+  "notes": "v2: OTA cloud URL support - hosted chat can move without APK updates"
 }

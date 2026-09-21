@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AI Reply</string>
+    <string name="accessibility_description">Optional: lets the AI Reply bubble read the text of the message you are replying to, so a reply can be suggested right away. You can also just paste the message into the bubble — this permission is not required.</string>
+</resources>

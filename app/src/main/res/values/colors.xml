@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand">#4F46E5</color>
+    <color name="brandDark">#4338CA</color>
+    <color name="brandSoft">#E0E7FF</color>
+    <color name="accentGreen">#10B981</color>
+    <color name="bg">#F5F6FA</color>
+    <color name="white">#FFFFFF</color>
+    <color name="textMain">#111827</color>
+    <color name="textSub">#6B7280</color>
+    <color name="stroke">#E5E7EB</color>
+    <color name="errorRed">#DC2626</color>
+    <color name="amberWarn">#D97706</color>
+    <color name="iconBgStart">#6366F1</color>
+    <color name="iconBgEnd">#8B5CF6</color>
+</resources>

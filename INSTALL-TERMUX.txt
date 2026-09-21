@@ -1,0 +1,82 @@
+AI REPLY v3.0.1 - SOURCE CODE PACKAGE
+======================================
+Native Kotlin app based on the replyfy project by aryankumarx (MIT license).
+
+WHAT YOU NEED (Termux on your Android phone)
+---------------------------------------------
+1. Install Termux (from F-Droid, or GitHub releases - the Play Store build is outdated).
+
+2. In Termux, install the build tools:
+
+   pkg update -y
+   pkg install openjdk-17 aapt apksigner git unzip -y
+
+3. Get the Android SDK platform file (arch-independent, ~60MB):
+
+   mkdir -p $HOME/android-sdk
+   cd $HOME/android-sdk
+   curl -LO https://dl.google.com/android/repository/platform-36_r02.zip
+   unzip -q platform-36_r02.zip
+   mv android-16 platforms 2>/dev/null || mkdir -p platforms && mv android-16 platforms/
+
+   (If that URL fails, install cmdline-tools and run sdkmanager:
+    pkg install android-sdk-cmdline-tools-latest  - then:
+    yes | sdkmanager --licenses && sdkmanager "platforms;android-36" )
+
+4. Unzip this source package and enter it:
+
+   cd ~
+   unzip AI-Reply-v3.0.1-source.zip
+   cd AIReplyNative
+
+5. Point Gradle at the SDK and Termux's native aapt2:
+
+   echo "sdk.dir=$HOME/android-sdk" > local.properties
+   echo "android.aapt2FromMavenOverride=$PREFIX/bin/aapt2" >> gradle.properties
+
+6. BUILD (debug build - auto-signed, ready to install):
+
+   chmod +x gradlew
+   ./gradlew assembleDebug --no-daemon
+
+   The first run downloads ~200MB of libraries. Be patient.
+   APK appears at: app/build/outputs/apk/debug/app-debug.apk
+
+7. Install it:
+
+   termux-open app/build/outputs/apk/debug/app-debug.apk
+   (or copy to /sdcard/Download and tap it)
+
+IF YOU WANT A RELEASE (signed) BUILD IN TERMUX
+-----------------------------------------------
+keytool -genkeypair -v -keystore my.keystore -alias mykey -keyalg RSA -keysize 2048 -validity 10000 -storepass PASS123 -keypass PASS123 -dname "CN=AI Reply"
+
+Edit app/build.gradle signingConfigs.release section with your own paths/passwords, then:
+
+   ./gradlew assembleRelease --no-daemon
+
+PUSHING THIS CODE TO YOUR GITHUB (easiest way: web upload)
+-----------------------------------------------------------
+1. Go to github.com -> New repository (name it e.g. ai-reply) -> Create.
+2. On the new repo page click "uploading an existing file".
+3. Drag the CONTENTS of this folder (or unzip and select all files).
+   Keep the folder structure: app/, gradle/, settings.gradle, build.gradle, gradlew ...
+   (GitHub web upload keeps folder structure if you drag folders.)
+4. Commit.
+
+OR FROM TERMUX WITH GIT:
+   git init
+   git add .
+   git commit -m "AI Reply v3.0.1 native"
+   git branch -M main
+   git remote add origin https://github.com/YOURNAME/ai-reply.git
+   git push -u origin main
+   (it will ask for your username + a Personal Access Token as password)
+
+NOTES
+-----
+- local.properties is NOT included on purpose (machine-specific).
+- The app needs NO API key baked in: the user types their free key
+  (Z.ai GLM preset by default) inside the app. Nothing is hardcoded.
+- If Gradle complains about aapt2 on ARM, make sure step 5's override line
+  is present - it tells AGP to use Termux's native aapt2 binary.

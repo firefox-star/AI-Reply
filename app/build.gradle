@@ -1,0 +1,70 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+// Release signing is optional: create a signing.properties file (gitignored) with:
+//   REPLYFY_RELEASE_STORE_FILE=/absolute/path/to/your.keystore
+//   REPLYFY_RELEASE_STORE_PASSWORD=...
+//   REPLYFY_RELEASE_KEY_ALIAS=...
+//   REPLYFY_RELEASE_KEY_PASSWORD=...
+// Without it, release builds fall back to the debug key so they stay installable.
+def signingProps = new Properties()
+def signingPropsFile = rootProject.file('signing.properties')
+if (signingPropsFile.exists()) {
+    signingPropsFile.withInputStream { signingProps.load(it) }
+}
+
+android {
+    namespace 'com.aikeyboardmobile'
+    compileSdk 36
+    buildToolsVersion '36.0.0'
+
+    defaultConfig {
+        applicationId 'com.aikeyboardmobile'
+        minSdk 24
+        targetSdk 34
+        versionCode 9
+        versionName '3.0.1'
+    }
+
+    signingConfigs {
+        if (signingPropsFile.exists()) {
+            release {
+                storeFile file(signingProps['REPLYFY_RELEASE_STORE_FILE'])
+                storePassword signingProps['REPLYFY_RELEASE_STORE_PASSWORD']
+                keyAlias signingProps['REPLYFY_RELEASE_KEY_ALIAS']
+                keyPassword signingProps['REPLYFY_RELEASE_KEY_PASSWORD']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (signingPropsFile.exists()) {
+                signingConfig signingConfigs.release
+            } else {
+                signingConfig signingConfigs.debug
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'com.google.android.material:material:1.12.0'
+}

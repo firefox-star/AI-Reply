@@ -35,8 +35,6 @@ object AiClient {
         transcript: String = ""
     ) {
         try {
-            val url = cfg.baseUrl.trim().trimEnd('/') + "/chat/completions"
-
             val system = "You are a helpful messaging assistant. The user received a message and " +
                     "wants to reply in one specific tone. Write exactly ONE reply in that tone. " +
                     "Output ONLY the reply text itself: no quotes, no labels, no explanation, no options. " +
@@ -52,6 +50,14 @@ object AiClient {
             } else {
                 "Tone: ${tone.title}\n\nMessage I received: $message\n\nWrite my reply in the tone above."
             }
+
+            // No user key? Use the AI Reply server relay (server-side credentials).
+            if (cfg.apiKey.isBlank()) {
+                relayOnce(cfg, system, user, cb)
+                return
+            }
+
+            val url = cfg.baseUrl.trim().trimEnd('/') + "/chat/completions"
 
             val root = JSONObject()
             root.put("model", cfg.model.trim())
@@ -103,6 +109,136 @@ object AiClient {
         } catch (e: Exception) {
             cb(Err("Network problem: ${e.message ?: e.javaClass.simpleName}. Check your internet and the Base URL."))
         }
+    }
+
+    /**
+     * SERVER RELAY — one-shot call to the AI Reply backend (POST /api/chat).
+     * Used when the user has no own API key: the backend talks to the AI with
+     * server-side credentials and returns plain JSON {success, reply}.
+     */
+    private fun relayOnce(cfg: Prefs.Config, system: String, user: String, cb: (Result) -> Unit) {
+        try {
+            val body = JSONObject()
+                .put("message", user)
+                .put("conversation", JSONArray())
+                .put("model", cfg.model.trim())
+            if (system.isNotBlank()) body.put("system", system)
+            val reply = relayHttpPost(cfg.apiBase, body.toString())
+            when {
+                reply.first.isNotBlank() -> cb(Ok(clean(reply.first)))
+                else -> cb(Err(reply.second))
+            }
+        } catch (e: Exception) {
+            cb(Err("Network problem: ${e.message ?: e.javaClass.simpleName}. Check your internet."))
+        }
+    }
+
+    /**
+     * SERVER RELAY — streaming-style chat for the chat UI. Calls POST /api/chat
+     * and emits the reply in small chunks (typewriter feel) so the existing UI
+     * needs no changes. Supports cancellation mid-emission.
+     */
+    fun relayStream(
+        id: String,
+        apiBase: String,
+        bodyJson: String,
+        onDelta: (String) -> Unit,
+        onDone: (aborted: Boolean) -> Unit,
+        onError: (String) -> Unit
+    ): StreamSession {
+        val session = StreamSession(id)
+        Thread {
+            try {
+                val src = JSONObject(bodyJson)
+                val msgs = src.optJSONArray("messages")
+                // Map UI payload {model, messages} -> relay {message, conversation, system}
+                var message = ""
+                val conversation = JSONArray()
+                var system = ""
+                if (msgs != null) {
+                    for (i in 0 until msgs.length()) {
+                        val m = msgs.optJSONObject(i) ?: continue
+                        val role = m.optString("role")
+                        val content = m.optString("content")
+                        if (content.isBlank()) continue
+                        when (role) {
+                            "system" -> system = content
+                            "user" -> {
+                                if (message.isNotBlank()) conversation.put(JSONObject().put("role", "user").put("content", message))
+                                message = content
+                            }
+                            "assistant" -> if (message.isNotBlank()) {
+                                conversation.put(JSONObject().put("role", "user").put("content", message))
+                                conversation.put(JSONObject().put("role", "assistant").put("content", content))
+                                message = ""
+                            }
+                        }
+                    }
+                }
+                if (message.isBlank()) {
+                    onError("Nothing to send.")
+                    return@Thread
+                }
+                val body = JSONObject()
+                    .put("message", message)
+                    .put("conversation", conversation)
+                val model = src.optString("model", "").ifBlank { "glm-4.5-flash" }
+                body.put("model", model)
+                if (system.isNotBlank()) body.put("system", system)
+
+                val (reply, err) = relayHttpPost(apiBase, body.toString())
+                if (session.cancelled) { onDone(true); return@Thread }
+                if (err.isNotBlank()) { onError(err); return@Thread }
+
+                // Typewriter emission — UI renders deltas exactly like a direct stream.
+                val chunk = 24
+                var i = 0
+                while (i < reply.length) {
+                    if (session.cancelled) { onDone(true); return@Thread }
+                    val end = minOf(i + chunk, reply.length)
+                    onDelta(reply.substring(i, end))
+                    i = end
+                    Thread.sleep(18)
+                }
+                onDone(false)
+            } catch (e: Exception) {
+                if (session.cancelled) onDone(true)
+                else onError("Network problem: ${e.message ?: e.javaClass.simpleName}. Check your internet.")
+            }
+        }.start()
+        return session
+    }
+
+    /** POST {apiBase}/api/chat and parse {success, reply} — returns (reply, error). */
+    private fun relayHttpPost(apiBase: String, bodyJson: String): Pair<String, String> {
+        val url = apiBase.trim().trimEnd('/') + "/api/chat"
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 20000
+            readTimeout = 120000
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Accept", "application/json")
+        }
+        conn.outputStream.use { it.write(bodyJson.toByteArray(Charsets.UTF_8)) }
+        val code = conn.responseCode
+        val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
+            ?.bufferedReader()?.use { it.readText() } ?: ""
+        try { conn.disconnect() } catch (_: Exception) {}
+
+        if (code !in 200..299) {
+            return Pair("", humanError(code, body))
+        }
+        val json = JSONObject(body)
+        if (!json.optBoolean("success", false)) {
+            val msg = json.optString("error", "The server could not answer. Try again.")
+            return Pair("", msg)
+        }
+        val reply = json.optString("reply", "")
+        if (reply.isBlank()) {
+            return Pair("", "The AI returned an empty reply. Try again shortly.")
+        }
+        return Pair(reply, "")
     }
 
     /**

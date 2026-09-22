@@ -5,9 +5,16 @@ import android.content.Context
 /**
  * Tiny SharedPreferences wrapper. The API key is stored ONLY on the user's phone —
  * nothing is ever hardcoded and nothing is sent anywhere except to the chosen AI provider.
+ *
+ * apiBase: the AI Reply server relay (no user key needed). Empty user key => relay mode.
  */
 object Prefs {
-    data class Config(val baseUrl: String, val apiKey: String, val model: String)
+    data class Config(
+        val baseUrl: String,
+        val apiKey: String,
+        val model: String,
+        val apiBase: String = ""
+    )
 
     private const val NAME = "aireply"
 
@@ -17,7 +24,8 @@ object Prefs {
         return Config(
             baseUrl = sp.getString("baseUrl", d.url) ?: d.url,
             apiKey = sp.getString("apiKey", "") ?: "",
-            model = sp.getString("model", d.model) ?: d.model
+            model = sp.getString("model", d.model) ?: d.model,
+            apiBase = AppUi.apiBase(ctx)
         )
     }
 

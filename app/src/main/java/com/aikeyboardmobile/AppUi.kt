@@ -69,6 +69,17 @@ object AppUi {
     }
 
     /**
+     * API base for the server relay (POST {base}/api/chat). Delivered over OTA
+     * via version.json "apiBase" — if the backend moves, every installed phone
+     * follows WITHOUT an APK update. Falls back to the baked constant.
+     */
+    fun apiBase(ctx: Context): String {
+        val u = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString("apiBase", null)?.trim()
+        return if (!u.isNullOrEmpty() && u.startsWith("http")) u else MainActivity.DEFAULT_API_BASE
+    }
+
+    /**
      * Check the repo for a newer UI. Silent in the background; shows toasts
      * when manual. On success the WebView reloads with the new file.
      */
@@ -76,6 +87,7 @@ object AppUi {
         Thread {
             var result = "latest"
             var cloudChanged = false
+            var apiChanged = false
             try {
                 val conn = URL("$VERSION_URL?t=${System.currentTimeMillis()}").openConnection() as HttpURLConnection
                 conn.connectTimeout = 10000
@@ -86,13 +98,22 @@ object AppUi {
                 val remoteVersion = meta.optInt("version", 0)
                 val current = installedVersion(ctx)
 
-                // Cloud URL can move independently of the UI version.
+                // Cloud URL (legacy v3.2.x) and API base (v3.3.0+) can move independently.
                 val cloud = meta.optString("cloudUrl", "").trim()
                 if (cloud.startsWith("http")) {
                     val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                     if (sp.getString("cloudUrl", null) != cloud) {
                         sp.edit().putString("cloudUrl", cloud).apply()
                         cloudChanged = true
+                    }
+                }
+                apiChanged = false
+                val api = meta.optString("apiBase", "").trim()
+                if (api.startsWith("http")) {
+                    val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                    if (sp.getString("apiBase", null) != api) {
+                        sp.edit().putString("apiBase", api).apply()
+                        apiChanged = true
                     }
                 }
 
@@ -139,6 +160,9 @@ object AppUi {
                         Toast.makeText(ctx, "Update check failed — check internet and try again", Toast.LENGTH_SHORT).show()
                     result == "latest" && manual ->
                         Toast.makeText(ctx, "You are on the latest chat build", Toast.LENGTH_SHORT).show()
+                }
+                if (apiChanged && ctx is MainActivity) {
+                    Toast.makeText(ctx, "Server address updated — AI keeps working", Toast.LENGTH_SHORT).show()
                 }
                 if (cloudChanged) (ctx as? MainActivity)?.switchToCloudIfLocal()
                 onResult?.invoke(result)

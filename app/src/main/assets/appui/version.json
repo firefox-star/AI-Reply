@@ -1,8 +1,9 @@
 {
-  "version": 2,
+  "version": 4,
   "updated": "2026-09-22",
   "file": "index.html",
-  "minApp": 11,
-  "cloudUrl": "https://c-6ab18a19-14810412-55d02c4d977c.space-z.ai/",
-  "notes": "v2: OTA cloud URL support - hosted chat can move without APK updates"
+  "minApp": 13,
+  "apiBase": "https://preview-chat-7e3581ef-b06f-4ba0-be81-e5559866c627.space-z.ai",
+  "cloudUrl": "https://preview-chat-7e3581ef-b06f-4ba0-be81-e5559866c627.space-z.ai/chat",
+  "notes": "v4: server relay era - API base is OTA-configurable; UI copy for built-in server AI"
 }

@@ -36,32 +36,46 @@ class ChatBridge(
         return "window.__aiError(${JSONObject.quote(id)}, $payload)"
     }
 
-    /** bodyJson = full request body {model, messages, baseUrl?, apiKey?, temperature?...} */
+    /** bodyJson = full request body {model, messages, baseUrl?, apiKey?, temperature?...}.
+     *  No API key => server relay (POST {apiBase}/api/chat, server-side credentials).
+     *  API key set => direct OpenAI-compatible stream to the user's own endpoint. */
     @JavascriptInterface
     fun chat(id: String, bodyJson: String) {
         try {
             val body = JSONObject(bodyJson)
             val cfg = Prefs.load(activity)
+            val apiKey = (body.optString("apiKey", cfg.apiKey).ifBlank { cfg.apiKey }).trim()
+
+            val onDelta: (String) -> Unit = { d ->
+                val payload = JSONObject().put("d", d).toString()
+                js("window.__aiChunk(${JSONObject.quote(id)}, $payload)")
+            }
+            val onDone: (Boolean) -> Unit = { aborted ->
+                js("window.__aiDone(${JSONObject.quote(id)}, $aborted)")
+                sessions.remove(id)
+            }
+            val onError: (String) -> Unit = { msg ->
+                js(errScript(id, msg))
+                sessions.remove(id)
+            }
+
+            if (apiKey.isBlank()) {
+                val session = AiClient.relayStream(
+                    id, AppUi.apiBase(activity), bodyJson,
+                    onDelta = onDelta, onDone = onDone, onError = onError
+                )
+                sessions[id] = session
+                return
+            }
+
             val baseUrl = (body.optString("baseUrl", cfg.baseUrl).ifBlank { cfg.baseUrl })
-            val apiKey = (body.optString("apiKey", cfg.apiKey).ifBlank { cfg.apiKey })
             if (baseUrl.isBlank()) {
                 js(errScript(id, "No AI endpoint set. Open Settings and add the API URL."))
                 return
             }
             val session = AiClient.stream(
                 id, baseUrl, apiKey, bodyJson,
-                onDelta = { d ->
-                    val payload = JSONObject().put("d", d).toString()
-                    js("window.__aiChunk(${JSONObject.quote(id)}, $payload)")
-                },
-                onDone = { aborted ->
-                    js("window.__aiDone(${JSONObject.quote(id)}, $aborted)")
-                    sessions.remove(id)
-                },
-                onError = { msg ->
-                    js(errScript(id, msg))
-                    sessions.remove(id)
-                }
+                onDelta = onDelta, onDone = onDone, onError = onError
             )
             sessions[id] = session
         } catch (e: Exception) {
@@ -97,7 +111,12 @@ class ChatBridge(
     // ---------- app info & updates ----------
 
     @JavascriptInterface
-    fun appVersion(): String = "3.2.0 (11)"
+    fun appVersion(): String = try {
+        val pm = activity.packageManager.getPackageInfo(activity.packageName, 0)
+        "${pm.versionName} (${pm.longVersionCode})"
+    } catch (_: Exception) {
+        "3.3.0"
+    }
 
     @JavascriptInterface
     fun checkUpdate() {
@@ -106,7 +125,14 @@ class ChatBridge(
 
     @JavascriptInterface
     fun loadCloudApp() {
-        main.post { (activity as? MainActivity)?.loadRemote() }
+        main.post {
+            // The web project is the backend now — open its console in the browser.
+            runCatching {
+                activity.startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse(MainActivity.DEFAULT_API_BASE + "/chat"))
+                )
+            }
+        }
     }
 
     // ---------- native system shortcuts ----------

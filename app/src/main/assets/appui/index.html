@@ -105,8 +105,8 @@ textarea.inp{resize:vertical;min-height:60px}
     </select>
     <label class="lb">API base URL</label>
     <input class="inp" id="s_base" spellcheck="false" placeholder="https://api.z.ai/api/paas/v4">
-    <label class="lb">API key (optional for cloud URL)</label>
-    <input class="inp" id="s_key" type="password" spellcheck="false" placeholder="sk-…">
+    <label class="lb">API key (optional — leave empty for built-in server AI)</label>
+    <input class="inp" id="s_key" type="password" spellcheck="false" placeholder="empty = AI Reply server (no key needed)">
     <label class="lb">Custom instructions</label>
     <textarea class="inp" id="s_sys" placeholder="How should the AI behave?"></textarea>
     <div class="btnrow">
@@ -162,7 +162,7 @@ function save(){try{localStorage.setItem(LS,JSON.stringify(history.slice(-60)));
 
 function render(){
   if(!history.length){
-    msgsEl.innerHTML='<div id="empty"><div class="big"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-8 8H4l2-3a8 8 0 1 1 15-5z"/></svg></div><h1>Offline mode</h1><p>The cloud chat could not load, so this built-in version is running. It reads your saved API settings — everything still works.</p></div>';
+    msgsEl.innerHTML='<div id="empty"><div class="big"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-8 8H4l2-3a8 8 0 1 1 15-5z"/></svg></div><h1>AI Reply</h1><p>Built-in chat, powered by the AI Reply server — no API key needed on v3.3.0+. On older app versions, add your free key in Settings.</p></div>';
     return;
   }
   var h="";
@@ -235,7 +235,7 @@ function openSheet(){
   document.getElementById("s_sys").value=settings.sys;
   var v=HAS?window.Android.appVersion():"browser";
   var acc=HAS&&window.Android.isAccessibilityEnabled()?"ON":"off";
-  document.getElementById("verline").innerHTML="AI Reply v"+v+" · accessibility "+acc+" · offline build 1";
+  document.getElementById("verline").innerHTML="AI Reply v"+v+" · accessibility "+acc+" · UI build 2";
   document.getElementById("sheetwrap").classList.add("show");
 }
 function closeSheet(){document.getElementById("sheetwrap").classList.remove("show");}

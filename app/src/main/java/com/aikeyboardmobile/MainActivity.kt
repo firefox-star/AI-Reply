@@ -4,7 +4,6 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.view.View
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -14,18 +13,23 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 
 /**
- * The app shell. The whole chat experience is a web app:
+ * The app shell. The Android app is the PRODUCT; the web project is its backend.
  *
- *  1. CLOUD UI (default) — the published AI Reply Chat site. Every improvement
- *     I deploy there reaches this app instantly, no APK download.
- *  2. OFFLINE UI — a bundled copy in filesDir (OTA-updated from the repo via
- *     AppUi). Shown automatically when the cloud site can't be reached, and it
- *     talks to the AI through the native bridge (ChatBridge).
+ *  1. LOCAL UI (always) — the bundled chat interface in filesDir. Hot-updated
+ *     over the air from the repo via AppUi, so UI improvements arrive without
+ *     a new APK.
+ *  2. SERVER RELAY — with no user API key, all AI goes through the public
+ *     backend (POST {DEFAULT_API_BASE}/api/chat) using server-side
+ *     credentials. Users may still plug their own key in Settings, in which
+ *     case the app talks to their endpoint directly.
+ *
+ * The backend URL is OTA-configurable (version.json "apiBase"): if the server
+ * moves, every installed phone follows WITHOUT an APK update.
  */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
-    private var usingLocal = false
+    private var usingLocal = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,8 +50,8 @@ class MainActivity : AppCompatActivity() {
                     request: WebResourceRequest
                 ): Boolean {
                     val url = request.url.toString()
-                    // Keep our own origins inside; open everything else outside.
-                    return if (url.startsWith(remoteUrl()) || url.startsWith("file:")) {
+                    // Keep our own local UI inside; open everything else outside.
+                    return if (url.startsWith("file:")) {
                         false
                     } else if (url.startsWith("http")) {
                         runCatching { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(url))) }
@@ -61,14 +65,6 @@ class MainActivity : AppCompatActivity() {
                     view: WebView,
                     request: WebResourceRequest,
                     error: WebResourceError
-                ) {
-                    if (request.isForMainFrame && !usingLocal) loadLocal()
-                }
-
-                override fun onReceivedHttpError(
-                    view: WebView,
-                    request: WebResourceRequest,
-                    errorResponse: android.webkit.WebResourceResponse
                 ) {
                     if (request.isForMainFrame && !usingLocal) loadLocal()
                 }
@@ -95,10 +91,10 @@ class MainActivity : AppCompatActivity() {
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState)
         } else {
-            loadRemote()
+            loadLocal()
         }
 
-        // Silent hot-update check for the offline UI (applies + reloads when newer).
+        // Silent hot-update check for the local UI + server address (applies + reloads when newer).
         AppUi.checkForUpdate(this, manual = false)
 
         if (Build.VERSION.SDK_INT >= 33) {
@@ -112,18 +108,8 @@ class MainActivity : AppCompatActivity() {
         evaluateJs("window.__appResume && window.__appResume()")
     }
 
-    fun loadRemote() {
-        usingLocal = false
-        webView.loadUrl(remoteUrl())
-    }
-
-    /** Cloud target: OTA-delivered URL wins over the baked constant. */
-    fun remoteUrl(): String = AppUi.cloudUrl(this) ?: REMOTE_UI_URL
-
-    /** Called by AppUi when an OTA check delivers a new cloud URL. */
-    fun switchToCloudIfLocal() {
-        if (usingLocal) loadRemote()
-    }
+    /** Kept for compatibility with OTA state from v3.2.x; the local UI is the app now. */
+    fun switchToCloudIfLocal() { /* no-op since v3.3.0 */ }
 
     fun loadLocal() {
         usingLocal = true
@@ -145,7 +131,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        /** Last-resort cloud chat URL; the live one is OTA-delivered via version.json. */
-        const val REMOTE_UI_URL = "https://c-6ab18a19-14810412-55d02c4d977c.space-z.ai/"
+        /**
+         * The public backend (baked as a BOOTSTRAP; the live value is OTA-delivered
+         * via version.json "apiBase" — see AppUi.apiBase).
+         */
+        const val DEFAULT_API_BASE = "https://preview-chat-7e3581ef-b06f-4ba0-be81-e5559866c627.space-z.ai"
     }
 }

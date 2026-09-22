@@ -1,8 +1,8 @@
 {
-  "version": 2,
+  "version": 3,
   "updated": "2026-09-22",
   "file": "index.html",
   "minApp": 11,
-  "cloudUrl": "https://c-6ab18a19-14810412-55d02c4d977c.space-z.ai/",
-  "notes": "v2: OTA cloud URL support - hosted chat can move without APK updates"
+  "cloudUrl": "https://preview-chat-7e3581ef-b06f-4ba0-be81-e5559866c627.space-z.ai/",
+  "notes": "v3: hosted chat moved to live preview URL"
 }
